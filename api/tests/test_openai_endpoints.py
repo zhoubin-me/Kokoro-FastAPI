@@ -12,8 +12,10 @@ from api.src.core.config import settings
 from api.src.inference.base import AudioChunk
 from api.src.main import app
 from api.src.routers.openai_compatible import (
+    detect_text_language,
     get_tts_service,
     load_openai_mappings,
+    resolve_voice_and_language,
     stream_audio_chunks,
 )
 from api.src.services.streaming_audio_writer import StreamingAudioWriter
@@ -162,7 +164,9 @@ async def test_stream_audio_chunks_client_disconnect():
     writer = StreamingAudioWriter("mp3", 24000)
 
     chunks = []
-    async for chunk in stream_audio_chunks(mock_service, request, mock_request, writer):
+    async for chunk in stream_audio_chunks(
+        mock_service, request, mock_request, writer, "test_voice", "a"
+    ):
         chunks.append(chunk)
 
     writer.close()
@@ -210,6 +214,50 @@ def test_openai_voice_mapping_streaming(
     for chunk in response.iter_bytes():
         content += chunk
     assert content == mock_audio_bytes
+
+
+def test_detect_text_language_heuristics():
+    assert detect_text_language("Hello world") == "a"
+    assert detect_text_language("Bonjour à tous") == "f"
+    assert detect_text_language("Hola, gracias por venir") == "e"
+    assert detect_text_language("こんにちは世界") == "j"
+    assert detect_text_language("你好，世界") == "z"
+
+
+@pytest.mark.asyncio
+async def test_resolve_voice_and_language_auto_selects_matching_voice(mock_tts_service):
+    mock_tts_service.list_voices.return_value = ["af_heart", "jf_alpha", "zf_xiaoxiao"]
+
+    request = OpenAISpeechRequest(
+        model="kokoro",
+        input="こんにちは、世界",
+        voice="auto",
+        response_format="mp3",
+        stream=True,
+    )
+
+    lang_code, voice = await resolve_voice_and_language(request, mock_tts_service)
+    assert lang_code == "j"
+    assert voice == "jf_alpha"
+
+
+def test_openai_speech_auto_voice_headers(mock_tts_service, mock_audio_bytes):
+    mock_tts_service.list_voices.return_value = ["af_heart", "zf_xiaoxiao"]
+
+    response = client.post(
+        "/v1/audio/speech",
+        json={
+            "model": "kokoro",
+            "input": "你好，世界",
+            "voice": "auto",
+            "response_format": "mp3",
+            "stream": True,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["X-Resolved-Lang-Code"] == "z"
+    assert response.headers["X-Resolved-Voice"] == "zf_xiaoxiao"
 
 
 def test_invalid_openai_model(mock_tts_service, mock_openai_mappings):
@@ -492,7 +540,9 @@ async def test_streaming_initialization_error():
     writer = StreamingAudioWriter("mp3", 24000)
 
     with pytest.raises(RuntimeError) as exc:
-        async for _ in stream_audio_chunks(mock_service, request, MagicMock(), writer):
+        async for _ in stream_audio_chunks(
+            mock_service, request, MagicMock(), writer, "test_voice", "a"
+        ):
             pass
 
     writer.close()

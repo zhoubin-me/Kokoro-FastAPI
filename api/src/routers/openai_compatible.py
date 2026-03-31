@@ -1,17 +1,12 @@
 """OpenAI-compatible router for text-to-speech"""
 
-import io
 import json
 import os
 import re
-import tempfile
-from typing import AsyncGenerator, Dict, List, Tuple, Union
-from urllib import response
+from typing import AsyncGenerator, Dict, List, Optional, Tuple, Union
 
-import aiofiles
 import numpy as np
-import torch
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
+from fastapi import APIRouter, Header, HTTPException, Request, Response
 from fastapi.responses import FileResponse, StreamingResponse
 from loguru import logger
 
@@ -39,6 +34,30 @@ def load_openai_mappings() -> Dict:
 
 # Global mappings
 _openai_mappings = load_openai_mappings()
+
+DEFAULT_LANGUAGE_VOICES = {
+    "a": "af_heart",
+    "b": "bf_emma",
+    "e": "ef_dora",
+    "f": "ff_siwis",
+    "h": "hf_alpha",
+    "i": "if_sara",
+    "j": "jf_alpha",
+    "p": "pf_dora",
+    "z": "zf_xiaoxiao",
+}
+
+VOICE_PREFIX_TO_LANG_CODE = {
+    "a": "a",
+    "b": "b",
+    "e": "e",
+    "f": "f",
+    "h": "h",
+    "i": "i",
+    "j": "j",
+    "p": "p",
+    "z": "z",
+}
 
 
 router = APIRouter(
@@ -78,6 +97,128 @@ def get_model_name(model: str) -> str:
     if not base_name:
         raise ValueError(f"Unsupported model: {model}")
     return base_name + ".pth"
+
+
+def detect_text_language(text: str) -> str:
+    """Detect the most likely Kokoro language code from the request text."""
+    if re.search(r"[\u3040-\u30ff]", text):
+        return "j"
+
+    if re.search(r"[\u4e00-\u9fff]", text):
+        return "z"
+
+    if re.search(r"[\u0900-\u097f]", text):
+        return "h"
+
+    lowered = text.lower()
+
+    if re.search(r"[¿¡ñáéíóúü]", lowered) or re.search(
+        r"\b(el|la|los|las|una|uno|pero|porque|gracias)\b", lowered
+    ):
+        return "e"
+
+    if re.search(r"[àâæçéèêëîïôœùûüÿ]", lowered) or re.search(
+        r"\b(le|la|les|des|une|bonjour|merci|avec)\b", lowered
+    ):
+        return "f"
+
+    if re.search(r"[ãõç]", lowered) or re.search(
+        r"\b(olá|você|vocês|não|uma|obrigado|obrigada|para)\b", lowered
+    ):
+        return "p"
+
+    if re.search(r"[àèéìíîòóù]", lowered) or re.search(
+        r"\b(ciao|grazie|per|con|una|che|gli|non)\b", lowered
+    ):
+        return "i"
+
+    if re.search(r"\b(colour|favourite|organise|centre|theatre|whilst)\b", lowered):
+        return "b"
+
+    return "a"
+
+
+def resolve_lang_code(request: Union[OpenAISpeechRequest, CaptionedSpeechRequest]) -> str:
+    """Resolve the final language code for a request."""
+    if request.lang_code:
+        return request.lang_code.lower()
+    return detect_text_language(request.input)
+
+
+async def choose_auto_voice(lang_code: str, available_voices: List[str]) -> str:
+    """Choose a language-matched default voice from the installed voices."""
+    preferred_voice = DEFAULT_LANGUAGE_VOICES.get(lang_code)
+    if preferred_voice and preferred_voice in available_voices:
+        return preferred_voice
+
+    prefix = f"{lang_code.lower()}f_"
+    for voice in sorted(available_voices):
+        if voice.startswith(prefix):
+            return voice
+
+    prefix = f"{lang_code.lower()}m_"
+    for voice in sorted(available_voices):
+        if voice.startswith(prefix):
+            return voice
+
+    prefix = f"{lang_code.lower()}_"
+    for voice in sorted(available_voices):
+        if voice.startswith(prefix):
+            return voice
+
+    fallback_voice = DEFAULT_LANGUAGE_VOICES["a"]
+    if fallback_voice in available_voices:
+        return fallback_voice
+
+    if available_voices:
+        return sorted(available_voices)[0]
+
+    raise ValueError("No voices are available")
+
+
+def _voice_is_auto(voice: Optional[str]) -> bool:
+    return voice is None or not voice.strip() or voice.strip().lower() == "auto"
+
+
+def _get_voice_lang_code(voice_name: str) -> Optional[str]:
+    mapped_voice = _openai_mappings["voices"].get(voice_name, voice_name)
+    prefix = mapped_voice[:1].lower()
+    return VOICE_PREFIX_TO_LANG_CODE.get(prefix)
+
+
+async def resolve_voice_and_language(
+    request: Union[OpenAISpeechRequest, CaptionedSpeechRequest],
+    tts_service: TTSService,
+) -> Tuple[str, str]:
+    """Resolve request language and voice, auto-selecting where appropriate."""
+    available_voices = await tts_service.list_voices()
+    resolved_lang_code = resolve_lang_code(request)
+
+    requested_voice = (request.voice or "").strip()
+    should_auto_select = _voice_is_auto(requested_voice)
+
+    if not should_auto_select:
+        voice_lang_code = _get_voice_lang_code(requested_voice)
+        is_openai_alias = requested_voice in _openai_mappings["voices"]
+        if (
+            request.lang_code is None
+            and is_openai_alias
+            and voice_lang_code
+            and voice_lang_code != resolved_lang_code
+        ):
+            logger.info(
+                f"Detected lang_code '{resolved_lang_code}' from text; replacing incompatible voice '{requested_voice}'"
+            )
+            should_auto_select = True
+
+    if should_auto_select:
+        requested_voice = await choose_auto_voice(resolved_lang_code, available_voices)
+        logger.info(
+            f"Auto-selected voice '{requested_voice}' for detected lang_code '{resolved_lang_code}'"
+        )
+
+    validated_voice = await process_and_validate_voices(requested_voice, tts_service)
+    return resolved_lang_code, validated_voice
 
 
 async def process_and_validate_voices(
@@ -137,9 +278,10 @@ async def stream_audio_chunks(
     request: Union[OpenAISpeechRequest, CaptionedSpeechRequest],
     client_request: Request,
     writer: StreamingAudioWriter,
+    resolved_voice: str,
+    resolved_lang_code: str,
 ) -> AsyncGenerator[AudioChunk, None]:
     """Stream audio chunks as they're generated with client disconnect handling"""
-    voice_name = await process_and_validate_voices(request.voice, tts_service)
     unique_properties = {"return_timestamps": False}
     if hasattr(request, "return_timestamps"):
         unique_properties["return_timestamps"] = request.return_timestamps
@@ -147,11 +289,11 @@ async def stream_audio_chunks(
     try:
         async for chunk_data in tts_service.generate_audio_stream(
             text=request.input,
-            voice=voice_name,
+            voice=resolved_voice,
             writer=writer,
             speed=request.speed,
             output_format=request.response_format,
-            lang_code=request.lang_code,
+            lang_code=resolved_lang_code,
             volume_multiplier=request.volume_multiplier,
             normalization_options=request.normalization_options,
             return_timestamps=unique_properties["return_timestamps"],
@@ -192,7 +334,9 @@ async def create_speech(
     try:
         # model_name = get_model_name(request.model)
         tts_service = await get_tts_service()
-        voice_name = await process_and_validate_voices(request.voice, tts_service)
+        resolved_lang_code, voice_name = await resolve_voice_and_language(
+            request, tts_service
+        )
 
         # Set content type based on format
         content_type = {
@@ -210,7 +354,12 @@ async def create_speech(
         if request.stream:
             # Create generator but don't start it yet
             generator = stream_audio_chunks(
-                tts_service, request, client_request, writer
+                tts_service,
+                request,
+                client_request,
+                writer,
+                voice_name,
+                resolved_lang_code,
             )
 
             # If download link requested, wrap generator with temp file writer
@@ -232,6 +381,8 @@ async def create_speech(
                     "Cache-Control": "no-cache",
                     "Transfer-Encoding": "chunked",
                     "X-Download-Path": download_path,
+                    "X-Resolved-Voice": voice_name,
+                    "X-Resolved-Lang-Code": resolved_lang_code,
                 }
 
                 # Add header to indicate if temp file writing is available
@@ -287,12 +438,16 @@ async def create_speech(
                     "X-Accel-Buffering": "no",
                     "Cache-Control": "no-cache",
                     "Transfer-Encoding": "chunked",
+                    "X-Resolved-Voice": voice_name,
+                    "X-Resolved-Lang-Code": resolved_lang_code,
                 },
             )
         else:
             headers = {
                 "Content-Disposition": f"attachment; filename=speech.{request.response_format}",
                 "Cache-Control": "no-cache",  # Prevent caching
+                "X-Resolved-Voice": voice_name,
+                "X-Resolved-Lang-Code": resolved_lang_code,
             }
 
             # Generate complete audio using public interface
@@ -303,7 +458,7 @@ async def create_speech(
                 speed=request.speed,
                 volume_multiplier=request.volume_multiplier,
                 normalization_options=request.normalization_options,
-                lang_code=request.lang_code,
+                lang_code=resolved_lang_code,
             )
 
             audio_data = await AudioService.convert_audio(

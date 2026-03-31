@@ -82,8 +82,8 @@ class OpenAISpeechRequest(BaseModel):
     )
     input: str = Field(..., description="The text to generate audio for")
     voice: str = Field(
-        default="af_heart",
-        description="The voice to use for generation. Can be a base voice or a combined voice name.",
+        default="auto",
+        description="The voice to use for generation. Use 'auto' or omit it to let the server choose a language-appropriate voice automatically.",
     )
     response_format: Literal["mp3", "opus", "aac", "flac", "wav", "pcm"] = Field(
         default="mp3",
@@ -132,8 +132,8 @@ class CaptionedSpeechRequest(BaseModel):
     )
     input: str = Field(..., description="The text to generate audio for")
     voice: str = Field(
-        default="af_heart",
-        description="The voice to use for generation. Can be a base voice or a combined voice name.",
+        default="auto",
+        description="The voice to use for generation. Use 'auto' or omit it to let the server choose a language-appropriate voice automatically.",
     )
     response_format: Literal["mp3", "opus", "aac", "flac", "wav", "pcm"] = Field(
         default="mp3",
