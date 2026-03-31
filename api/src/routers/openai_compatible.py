@@ -36,15 +36,15 @@ def load_openai_mappings() -> Dict:
 _openai_mappings = load_openai_mappings()
 
 DEFAULT_LANGUAGE_VOICES = {
-    "a": "af_heart",
-    "b": "bf_emma",
-    "e": "ef_dora",
+    "a": "am_adam",
+    "b": "bm_george",
+    "e": "em_alex",
     "f": "ff_siwis",
-    "h": "hf_alpha",
-    "i": "if_sara",
-    "j": "jf_alpha",
-    "p": "pf_dora",
-    "z": "zf_xiaoxiao",
+    "h": "hm_omega",
+    "i": "im_nicola",
+    "j": "jm_kumo",
+    "p": "pm_alex",
+    "z": "zm_yunjian",
 }
 
 VOICE_PREFIX_TO_LANG_CODE = {
@@ -151,12 +151,12 @@ async def choose_auto_voice(lang_code: str, available_voices: List[str]) -> str:
     if preferred_voice and preferred_voice in available_voices:
         return preferred_voice
 
-    prefix = f"{lang_code.lower()}f_"
+    prefix = f"{lang_code.lower()}m_"
     for voice in sorted(available_voices):
         if voice.startswith(prefix):
             return voice
 
-    prefix = f"{lang_code.lower()}m_"
+    prefix = f"{lang_code.lower()}f_"
     for voice in sorted(available_voices):
         if voice.startswith(prefix):
             return voice

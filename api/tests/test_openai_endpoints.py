@@ -226,7 +226,7 @@ def test_detect_text_language_heuristics():
 
 @pytest.mark.asyncio
 async def test_resolve_voice_and_language_auto_selects_matching_voice(mock_tts_service):
-    mock_tts_service.list_voices.return_value = ["af_heart", "jf_alpha", "zf_xiaoxiao"]
+    mock_tts_service.list_voices.return_value = ["am_adam", "jm_kumo", "zm_yunjian"]
 
     request = OpenAISpeechRequest(
         model="kokoro",
@@ -238,11 +238,11 @@ async def test_resolve_voice_and_language_auto_selects_matching_voice(mock_tts_s
 
     lang_code, voice = await resolve_voice_and_language(request, mock_tts_service)
     assert lang_code == "j"
-    assert voice == "jf_alpha"
+    assert voice == "jm_kumo"
 
 
 def test_openai_speech_auto_voice_headers(mock_tts_service, mock_audio_bytes):
-    mock_tts_service.list_voices.return_value = ["af_heart", "zf_xiaoxiao"]
+    mock_tts_service.list_voices.return_value = ["am_adam", "zm_yunjian"]
 
     response = client.post(
         "/v1/audio/speech",
@@ -257,7 +257,26 @@ def test_openai_speech_auto_voice_headers(mock_tts_service, mock_audio_bytes):
 
     assert response.status_code == 200
     assert response.headers["X-Resolved-Lang-Code"] == "z"
-    assert response.headers["X-Resolved-Voice"] == "zf_xiaoxiao"
+    assert response.headers["X-Resolved-Voice"] == "zm_yunjian"
+
+
+@pytest.mark.asyncio
+async def test_resolve_voice_and_language_prefers_male_prefix_when_default_missing(
+    mock_tts_service,
+):
+    mock_tts_service.list_voices.return_value = ["af_heart", "am_michael"]
+
+    request = OpenAISpeechRequest(
+        model="kokoro",
+        input="Hello world",
+        voice="auto",
+        response_format="mp3",
+        stream=True,
+    )
+
+    lang_code, voice = await resolve_voice_and_language(request, mock_tts_service)
+    assert lang_code == "a"
+    assert voice == "am_michael"
 
 
 def test_invalid_openai_model(mock_tts_service, mock_openai_mappings):
