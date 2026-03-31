@@ -5,7 +5,7 @@
         "kokoro": "kokoro-v1_0"
     },
     "voices": {
-        "alloy": "am_v0adam",
+        "alloy": "af_alloy",
         "ash": "af_v0nicole",
         "coral": "bf_v0emma",
         "echo": "af_v0bella",

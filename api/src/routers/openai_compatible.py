@@ -36,15 +36,15 @@ def load_openai_mappings() -> Dict:
 _openai_mappings = load_openai_mappings()
 
 DEFAULT_LANGUAGE_VOICES = {
-    "a": "am_adam",
-    "b": "bm_george",
-    "e": "em_alex",
-    "f": "ff_siwis",
-    "h": "hm_omega",
-    "i": "im_nicola",
-    "j": "jm_kumo",
-    "p": "pm_alex",
-    "z": "zm_yunjian",
+    "a": "af_alloy",
+    "b": "af_alloy",
+    "e": "af_alloy",
+    "f": "af_alloy",
+    "h": "af_alloy",
+    "i": "af_alloy",
+    "j": "af_alloy",
+    "p": "af_alloy",
+    "z": "af_alloy",
 }
 
 VOICE_PREFIX_TO_LANG_CODE = {

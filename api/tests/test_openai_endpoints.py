@@ -38,7 +38,7 @@ def mock_openai_mappings():
         "api.src.routers.openai_compatible._openai_mappings",
         {
             "models": {"tts-1": "kokoro-v1_0", "tts-1-hd": "kokoro-v1_0"},
-            "voices": {"alloy": "am_adam", "nova": "bf_isabella"},
+            "voices": {"alloy": "af_alloy", "nova": "bf_isabella"},
         },
     ):
         yield
@@ -176,7 +176,7 @@ async def test_stream_audio_chunks_client_disconnect():
 
 def test_openai_voice_mapping(mock_tts_service, mock_openai_mappings):
     """Test OpenAI voice name mapping"""
-    mock_tts_service.list_voices.return_value = ["am_adam", "bf_isabella"]
+    mock_tts_service.list_voices.return_value = ["af_alloy", "bf_isabella"]
 
     response = client.post(
         "/v1/audio/speech",
@@ -190,7 +190,7 @@ def test_openai_voice_mapping(mock_tts_service, mock_openai_mappings):
     )
     assert response.status_code == 200
     mock_tts_service.generate_audio.assert_called_once()
-    assert mock_tts_service.generate_audio.call_args[1]["voice"] == "am_adam"
+    assert mock_tts_service.generate_audio.call_args[1]["voice"] == "af_alloy"
 
 
 def test_openai_voice_mapping_streaming(
@@ -226,7 +226,7 @@ def test_detect_text_language_heuristics():
 
 @pytest.mark.asyncio
 async def test_resolve_voice_and_language_auto_selects_matching_voice(mock_tts_service):
-    mock_tts_service.list_voices.return_value = ["am_adam", "jm_kumo", "zm_yunjian"]
+    mock_tts_service.list_voices.return_value = ["af_alloy", "jm_kumo", "zm_yunjian"]
 
     request = OpenAISpeechRequest(
         model="kokoro",
@@ -238,11 +238,11 @@ async def test_resolve_voice_and_language_auto_selects_matching_voice(mock_tts_s
 
     lang_code, voice = await resolve_voice_and_language(request, mock_tts_service)
     assert lang_code == "j"
-    assert voice == "jm_kumo"
+    assert voice == "af_alloy"
 
 
 def test_openai_speech_auto_voice_headers(mock_tts_service, mock_audio_bytes):
-    mock_tts_service.list_voices.return_value = ["am_adam", "zm_yunjian"]
+    mock_tts_service.list_voices.return_value = ["af_alloy", "zm_yunjian"]
 
     response = client.post(
         "/v1/audio/speech",
@@ -257,11 +257,11 @@ def test_openai_speech_auto_voice_headers(mock_tts_service, mock_audio_bytes):
 
     assert response.status_code == 200
     assert response.headers["X-Resolved-Lang-Code"] == "z"
-    assert response.headers["X-Resolved-Voice"] == "zm_yunjian"
+    assert response.headers["X-Resolved-Voice"] == "af_alloy"
 
 
 @pytest.mark.asyncio
-async def test_resolve_voice_and_language_prefers_male_prefix_when_default_missing(
+async def test_resolve_voice_and_language_falls_back_to_matching_prefix_when_default_missing(
     mock_tts_service,
 ):
     mock_tts_service.list_voices.return_value = ["af_heart", "am_michael"]
