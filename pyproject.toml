@@ -42,59 +42,6 @@ dependencies = [
     "text2num>=2.5.1",
 ]
 
-[project.optional-dependencies]
-gpu = ["torch==2.8.0+cu129"]
-cpu = ["torch==2.8.0"]
-rocm = [
-    "torch==2.8.0+rocm6.4",
-    "pytorch-triton-rocm>=3.2.0",
-]
-test = [
-    "pytest==8.3.5",
-    "pytest-cov==6.0.0",
-    "httpx==0.26.0",
-    "pytest-asyncio==0.25.3",
-    "tomli>=2.0.1",
-    "jinja2>=3.1.6",
-]
-
-[tool.uv]
-conflicts = [
-    [
-        { extra = "cpu" },
-        { extra = "gpu" },
-        { extra = "rocm" },
-    ],
-]
-override-dependencies = [
-    "triton>=3.5.1 ; platform_machine == 'aarch64'"
-]
-
-[tool.uv.sources]
-torch = [
-    { index = "pytorch-cpu", extra = "cpu" },
-    { index = "pytorch-cuda", extra = "gpu" },
-    { index = "pytorch-rocm", extra = "rocm" },
-]
-pytorch-triton-rocm = [
-    { index = "pytorch-rocm", extra = "rocm" },
-]
-
-[[tool.uv.index]]
-name = "pytorch-cpu"
-url = "https://download.pytorch.org/whl/cpu"
-explicit = true
-
-[[tool.uv.index]]
-name = "pytorch-cuda"
-url = "https://download.pytorch.org/whl/cu129"
-explicit = true
-
-[[tool.uv.index]]
-name = "pytorch-rocm"
-url = "https://download.pytorch.org/whl/rocm6.4"
-explicit = true
-
 [build-system]
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
